@@ -46,7 +46,7 @@ export default function App() {
     input.current?.focus()
   }
   return <div className="shell">
-    <header className="brand"><a href="./" aria-label="Taskline — главная"><span className="brand-icon"><Check /></span>taskline<span className="brand-dot">.</span></a><span className="brand-note">Меньше шума. Больше дела.</span></header>
+    <header className="brand"><a href="./" aria-label="Taskline — главная"><span className="brand-icon"><Check /></span>taskline<span className="brand-dot">.</span></a><span className="brand-note">Меньше слов. Больше дела.</span></header>
     <main>
       <div className="intro"><div><p className="eyebrow">Ваше пространство для дел</p><h1>Один шаг за раз.</h1><p className="subtitle">Освободите мысли. Запишите то, что важно.</p></div><span className="intro-mark" aria-hidden="true"><Check /></span></div>
       <section className="workspace" aria-label="Список задач">

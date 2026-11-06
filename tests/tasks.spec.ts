@@ -1,0 +1,98 @@
+import { test, expect } from '@playwright/test'
+
+test('добавление, выполнение, фильтры, счётчик, перезагрузка и удаление', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', e => errors.push(e.message))
+  page.on('console', m => { if (m.type() === 'error') errors.push(m.text()) })
+  await page.goto('/')
+  await expect(page.getByText('Место для ваших планов')).toBeVisible()
+  const input = page.getByRole('textbox', { name: 'Новая задача' })
+  await expect(page.getByRole('button', { name: 'Добавить' })).toBeDisabled()
+  await input.fill('   ')
+  await expect(page.getByRole('button', { name: 'Добавить' })).toBeDisabled()
+  await input.fill('  Подготовить тестовое задание  ')
+  await input.press('Enter')
+  await input.fill('Проверить мобильную версию')
+  await page.getByRole('button', { name: 'Добавить' }).click()
+  await expect(page.getByRole('listitem')).toHaveCount(2)
+  await expect(page.getByTestId('remaining')).toHaveText('Осталось задач: 2')
+  await page.getByRole('checkbox', { name: 'Подготовить тестовое задание' }).check()
+  await expect(page.getByTestId('remaining')).toHaveText('Осталось задач: 1')
+  await page.getByRole('button', { name: /^Активные/ }).click()
+  await expect(page.getByRole('listitem')).toHaveCount(1)
+  await expect(page.getByRole('checkbox', { name: 'Проверить мобильную версию' })).toBeVisible()
+  await page.getByRole('button', { name: /^Выполненные/ }).click()
+  await expect(page.getByRole('listitem')).toHaveCount(1)
+  await expect(page.getByRole('checkbox')).toBeChecked()
+  await page.reload()
+  await expect(page.getByRole('listitem')).toHaveCount(2)
+  await expect(page.getByRole('checkbox', { name: 'Подготовить тестовое задание' })).toBeChecked()
+  await expect(page.getByTestId('remaining')).toHaveText('Осталось задач: 1')
+  await page.getByRole('checkbox', { name: 'Подготовить тестовое задание' }).uncheck()
+  await expect(page.getByTestId('remaining')).toHaveText('Осталось задач: 2')
+  await page.getByRole('button', { name: 'Удалить задачу: Подготовить тестовое задание', exact: true }).click()
+  await page.reload()
+  await expect(page.getByRole('listitem')).toHaveCount(1)
+  await expect(page.getByTestId('remaining')).toHaveText('Осталось задач: 1')
+  await page.getByRole('button', { name: 'Удалить задачу: Проверить мобильную версию', exact: true }).click()
+  await page.getByRole('button', { name: /^Выполненные/ }).click()
+  await expect(page.getByText('Здесь будут ваши результаты')).toBeVisible()
+  await page.getByRole('button', { name: /^Активные/ }).click()
+  await expect(page.getByText('Всё сделано. Можно выдохнуть.')).toBeVisible()
+  await page.reload()
+  await expect(page.getByRole('listitem')).toHaveCount(0)
+  expect(errors).toEqual([])
+})
+
+test('длинный текст безопасен и не ломает ширину на 320–1440 px', async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('textbox').fill('<img src=x onerror=alert(1)> ' + 'ДлиннаяЗадача'.repeat(20))
+  await page.getByRole('button', { name: 'Добавить' }).click()
+  await expect(page.locator('.task-title img')).toHaveCount(0)
+  for (const width of [320, 390, 768, 1440]) {
+    await page.setViewportSize({ width, height: 900 })
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+    await expect(page.getByRole('button', { name: /^Удалить задачу/ })).toBeVisible()
+    await expect(page.getByRole('button', { name: /^Выполненные/ })).toBeVisible()
+  }
+})
+
+test('повреждённые данные сохраняются без перезаписи', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('taskline.tasks.v1', '{broken'))
+  await page.goto('/')
+  await expect(page.getByRole('alert')).toContainText('Не удалось прочитать')
+  await expect(page.getByRole('textbox')).toBeDisabled()
+  expect(await page.evaluate(() => localStorage.getItem('taskline.tasks.v1'))).toBe('{broken')
+})
+
+test('ошибка записи видна, данные можно сохранить повторно', async ({ page }) => {
+  await page.addInitScript(() => {
+    const original = Storage.prototype.setItem
+    Storage.prototype.setItem = function (key, value) {
+      if (key === 'taskline.tasks.v1') throw new DOMException('Full', 'QuotaExceededError')
+      original.call(this, key, value)
+    }
+    Object.assign(window, { restoreStorage: () => { Storage.prototype.setItem = original } })
+  })
+  await page.goto('/')
+  await page.getByRole('textbox').fill('Сохранить важное')
+  await page.getByRole('button', { name: 'Добавить' }).click()
+  await expect(page.getByRole('alert')).toContainText('Изменения пока только в этой вкладке')
+  await expect(page.getByRole('checkbox')).toBeVisible()
+  await page.evaluate(() => (window as unknown as { restoreStorage: () => void }).restoreStorage())
+  await page.getByRole('button', { name: 'Повторить сохранение' }).click()
+  await expect(page.getByRole('alert')).toHaveCount(0)
+  await page.reload()
+  await expect(page.getByRole('checkbox', { name: 'Сохранить важное' })).toBeVisible()
+})
+
+test('добавление и выполнение с клавиатуры', async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('textbox').focus()
+  await page.keyboard.type('Keyboard task')
+  await page.keyboard.press('Enter')
+  await expect(page.getByRole('textbox')).toBeFocused()
+  await page.getByRole('checkbox').focus()
+  await page.keyboard.press('Space')
+  await expect(page.getByRole('checkbox')).toBeChecked()
+})
